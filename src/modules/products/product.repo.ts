@@ -16,6 +16,43 @@ export interface PaginatedProductsResult {
 }
 
 export class ProductRepository {
+  private async attachCategoriesToProducts(products: Product[]): Promise<Product[]> {
+    if (products.length === 0) return products;
+
+    const { data: categories, error } = await supabaseAdmin
+      .from('product_categories')
+      .select('*');
+
+    if (error || !categories) {
+      console.error('[attachCategoriesToProducts] Gagal membaca tabel product_categories:', error?.message);
+      return products;
+    }
+
+    const categoryMap = new Map<string, ProductCategory>();
+    for (const cat of categories as ProductCategory[]) {
+      if (cat.id) {
+        categoryMap.set(cat.id.trim().toLowerCase(), {
+          ...cat,
+          id: cat.id.trim(),
+        });
+      }
+    }
+
+    return products.map((product) => {
+      const cleanCatId =
+        typeof product.category_id === 'string'
+          ? product.category_id.trim().toLowerCase()
+          : '';
+      const matchedCategory = cleanCatId ? categoryMap.get(cleanCatId) ?? null : null;
+
+      return {
+        ...product,
+        category_id: product.category_id ? product.category_id.trim() : null,
+        category: matchedCategory || product.category || null,
+      };
+    });
+  }
+
   async findAll(params?: ProductQueryParams): Promise<PaginatedProductsResult> {
     const page = Math.max(1, Number(params?.page) || 1);
     const limit = Math.max(1, Math.min(100, Number(params?.limit) || 20));
@@ -24,7 +61,7 @@ export class ProductRepository {
 
     let query = supabaseAdmin
       .from('products')
-      .select('*, category:category_id(*), gallery:product_galleries(*)', { count: 'exact' })
+      .select('*, gallery:product_galleries(*)', { count: 'exact' })
       .order('created_at', { ascending: false });
 
     if (params?.search) {
@@ -43,11 +80,13 @@ export class ProductRepository {
     const { data, error, count } = await query;
     if (error) throw new Error(error.message);
 
+    const rawItems = (data as Product[]) || [];
+    const items = await this.attachCategoriesToProducts(rawItems);
     const totalRows = count ?? 0;
     const totalPages = Math.max(1, Math.ceil(totalRows / limit));
 
     return {
-      items: (data as Product[]) || [],
+      items,
       totalRows,
       page,
       limit,
@@ -58,39 +97,58 @@ export class ProductRepository {
   async findById(id: string): Promise<Product | null> {
     const { data, error } = await supabaseAdmin
       .from('products')
-      .select('*, category:category_id(*), gallery:product_galleries(*)')
+      .select('*, gallery:product_galleries(*)')
       .eq('id', id)
       .single();
 
-    if (error) return null;
-    return data as Product;
+    if (error || !data) return null;
+
+    const [hydrated] = await this.attachCategoriesToProducts([data as Product]);
+    return hydrated ?? null;
   }
 
   async findCategories(): Promise<ProductCategory[]> {
     const { data, error } = await supabaseAdmin
-      .from('categories')
+      .from('product_categories')
       .select('*')
       .order('name', { ascending: true });
 
     if (error) {
+      console.error('[findCategories] Gagal membaca tabel product_categories:', error.message);
       return [];
     }
-    return (data as ProductCategory[]) || [];
+    return ((data as ProductCategory[]) || []).map((c) => ({
+      ...c,
+      id: c.id.trim(),
+    }));
   }
 
   async resolveValidCategoryId(categoryId?: string | null): Promise<string | null> {
     if (!categoryId || categoryId.trim() === '') return null;
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(categoryId)) return null;
 
-    const { data, error } = await supabaseAdmin
-      .from('categories')
-      .select('id')
-      .eq('id', categoryId)
-      .maybeSingle();
+    const cleanId = categoryId.trim();
 
-    if (error || !data) return null;
-    return data.id;
+    const { data: categories, error } = await supabaseAdmin
+      .from('product_categories')
+      .select('id, name');
+
+    if (error || !categories) {
+      console.error('[resolveValidCategoryId] Gagal membaca tabel product_categories:', error?.message);
+      return null;
+    }
+
+    const matched = categories.find(
+      (c) =>
+        typeof c.id === 'string' &&
+        c.id.trim().toLowerCase() === cleanId.toLowerCase(),
+    );
+
+    if (!matched) {
+      console.warn(`[resolveValidCategoryId] Kategori "${cleanId}" tidak ditemukan di DB:`, categories);
+      return null;
+    }
+
+    return matched.id;
   }
 
   async uploadPublicImage(
@@ -178,6 +236,8 @@ export class ProductRepository {
     newGalleryUrls: string[] = [],
     removedGalleryIds: string[] = [],
   ): Promise<Product | null> {
+    console.log('[ProductRepository.update]', { id, category_id: productData.category_id });
+
     const { error } = await supabaseAdmin
       .from('products')
       .update({

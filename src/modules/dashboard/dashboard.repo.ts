@@ -53,6 +53,22 @@ export const dashboardRepo = {
       supabaseAdmin.from('affiliates').select('id', { count: 'exact', head: true }),
     ]);
 
+    if (productsRes.error) {
+      throw new Error(`Gagal memuat total produk: ${productsRes.error.message}`);
+    }
+    if (publishedRes.error) {
+      throw new Error(`Gagal memuat produk terbit: ${publishedRes.error.message}`);
+    }
+    if (dealsRes.error) {
+      throw new Error(`Gagal memuat promo aktif: ${dealsRes.error.message}`);
+    }
+    if (couponsRes.error) {
+      throw new Error(`Gagal memuat kupon aktif: ${couponsRes.error.message}`);
+    }
+    if (affiliatesRes.error) {
+      throw new Error(`Gagal memuat data afiliasi: ${affiliatesRes.error.message}`);
+    }
+
     return {
       totalProducts: productsRes.count ?? 0,
       publishedProducts: publishedRes.count ?? 0,
@@ -100,10 +116,14 @@ export const dashboardRepo = {
 
     if (uniqueIds.length === 0) return dict;
 
-    const { data } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from('users')
       .select('id, username, email')
       .in('id', uniqueIds);
+
+    if (error) {
+      throw new Error(`Gagal memuat profil pembeli: ${error.message}`);
+    }
 
     if (Array.isArray(data)) {
       for (const row of data as DashboardBuyerProfile[]) {

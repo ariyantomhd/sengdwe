@@ -32,11 +32,9 @@ export interface AdminDashboardSummary {
 
 export const dashboardService = {
   async buildDashboardOverview(): Promise<AdminDashboardSummary> {
-    const [counts, orderFinancials, rawRecentOrders] = await Promise.all([
-      dashboardRepo.fetchModuleCounts(),
-      dashboardRepo.fetchAllOrderFinancials(),
-      dashboardRepo.fetchRecentOrders(8),
-    ]);
+    const counts = await dashboardRepo.fetchModuleCounts();
+    const orderFinancials = await dashboardRepo.fetchAllOrderFinancials();
+    const rawRecentOrders = await dashboardRepo.fetchRecentOrders(8);
 
     let totalRevenue = 0;
     let paidOrders = 0;
