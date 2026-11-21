@@ -1,17 +1,17 @@
 // src/middlewares/auth.middleware.ts
 import { Request, Response, NextFunction } from 'express';
-import { supabaseAdmin } from '../config/supabase.js';
+import { supabaseAdmin } from '../config/supabase';
 
-// Perluas interface Request Express agar dapat mengenali properti user/admin yang sedang login
 export interface AuthenticatedRequest extends Request {
   adminUser?: {
     id: string;
     email: string;
     role?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
+// Stateless token verification (no in-memory Map cache across serverless invocations)
 export async function verifyAdminAuth(
   req: AuthenticatedRequest,
   res: Response,
@@ -31,10 +31,22 @@ export async function verifyAdminAuth(
       return;
     }
 
-    const token = authHeader.split(' ')[1];
+    const token = authHeader.split(' ')[1]?.trim();
+    if (!token) {
+      res.status(401).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          details: 'Token autentikasi kosong.',
+        },
+      });
+      return;
+    }
 
-    // Verifikasi token menggunakan Supabase Auth Admin API
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    const {
+      data: { user },
+      error: authError,
+    } = await supabaseAdmin.auth.getUser(token);
 
     if (authError || !user) {
       res.status(401).json({
@@ -47,26 +59,21 @@ export async function verifyAdminAuth(
       return;
     }
 
-    // Optional: Validasi tambahan role admin dari metadata atau tabel profil database jika diperlukan
-    // Contoh pengecekan role:
-    // const userRole = user.user_metadata?.role || user.app_metadata?.role;
-    // if (userRole !== 'admin') { ... }
-
-    // Lampirkan data user ke objek request agar bisa diakses oleh controller berikutnya
     req.adminUser = {
       id: user.id,
       email: user.email || '',
-      role: user.user_metadata?.role || 'admin',
+      role: String(user.user_metadata?.role || 'admin'),
     };
 
     next();
-  } catch (err: any) {
-    console.error('Auth Middleware Error:', err.message);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Auth middleware error';
+    console.error('Auth Middleware Error:', message);
     res.status(500).json({
       success: false,
       error: {
         code: 'AUTH_MIDDLEWARE_ERROR',
-        details: err.message,
+        details: message,
       },
     });
   }

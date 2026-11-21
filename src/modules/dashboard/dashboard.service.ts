@@ -17,16 +17,21 @@ export interface DashboardRecentOrder {
   created_at: string;
 }
 
-export interface AdminDashboardSummary {
+export interface AdminDashboardStatsPayload {
   total_products: number;
   published_products: number;
   total_revenue: number;
   active_orders: number;
+  total_orders: number;
   paid_orders: number;
   pending_orders: number;
   active_deals: number;
   active_coupons: number;
   total_affiliates: number;
+}
+
+export interface AdminDashboardSummary extends AdminDashboardStatsPayload {
+  stats: AdminDashboardStatsPayload;
   recent_orders: DashboardRecentOrder[];
 }
 
@@ -65,16 +70,22 @@ export const dashboardService = {
       };
     });
 
-    return {
+    const stats: AdminDashboardStatsPayload = {
       total_products: counts.totalProducts,
       published_products: counts.publishedProducts,
       total_revenue: Number(totalRevenue.toFixed(2)),
       active_orders: paidOrders + pendingOrders,
+      total_orders: orderFinancials.length,
       paid_orders: paidOrders,
       pending_orders: pendingOrders,
       active_deals: counts.activeDeals,
       active_coupons: counts.activeCoupons,
       total_affiliates: counts.totalAffiliates,
+    };
+
+    return {
+      ...stats,
+      stats,
       recent_orders: recentOrders,
     };
   },
