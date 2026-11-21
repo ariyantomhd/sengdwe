@@ -1,11 +1,15 @@
 // src/modules/auth/auth.repo.ts
-import { supabaseAdmin } from '../../config/supabase';
+import { supabaseAdmin, createAuthClient } from '../../config/supabase';
 import type { User, LoginPayload, AuthTokenResponse } from '../../types/auth';
 import { UserRole, AccountStatus } from '../../types/enums';
 
 export class AuthRepository {
   async authenticateAdmin(payload: LoginPayload): Promise<AuthTokenResponse> {
-    const { data: authData, error: authError } = await supabaseAdmin.auth.signInWithPassword({
+    // PENTING: login memakai client sekali pakai (createAuthClient), BUKAN supabaseAdmin.
+    // Kalau signInWithPassword dipanggil lewat supabaseAdmin (client global), sesi user
+    // tersimpan di memori dan semua query berikutnya berjalan sebagai user (kena RLS),
+    // sehingga dashboard menampilkan data kosong sampai BE direstart.
+    const { data: authData, error: authError } = await createAuthClient().auth.signInWithPassword({
       email: payload.email,
       password: payload.password,
     });
@@ -15,6 +19,7 @@ export class AuthRepository {
     }
 
     // Ambil profil resmi dari tabel public.users berdasarkan UUID
+    // (tetap pakai supabaseAdmin / service role untuk query data)
     const { data: dbUser, error: dbError } = await supabaseAdmin
       .from('users')
       .select('id, email, username, creator_number, avatar_url, role, status, created_at, updated_at')
